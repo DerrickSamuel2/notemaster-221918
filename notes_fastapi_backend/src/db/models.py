@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import List
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Table, Text, func
+from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, String, Table, Text, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -14,8 +14,8 @@ class Base(DeclarativeBase):
 note_tags = Table(
     "note_tags",
     Base.metadata,
-    mapped_column("note_id", ForeignKey("notes.id", ondelete="CASCADE"), primary_key=True),
-    mapped_column("tag_id", ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True),
+    Column("note_id", ForeignKey("notes.id", ondelete="CASCADE"), primary_key=True),
+    Column("tag_id", ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True),
 )
 
 
