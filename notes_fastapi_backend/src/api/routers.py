@@ -156,13 +156,18 @@ def delete_note(note_id: int, db: Session = Depends(get_db)) -> Response:
     summary="List/search notes",
     description=(
         "List notes with optional free-text search (title/content) and optional tag filters.\n\n"
+        "Query params supported for compatibility:\n"
+        "  - query: free-text search\n"
+        "  - tag: single tag filter\n"
+        "  - tags: repeated tag filter (?tags=work&tags=todo)\n\n"
         "Tag filtering semantics: if multiple tags are provided, notes must contain ALL of them."
     ),
     operation_id="list_notes",
 )
 # PUBLIC_INTERFACE
 def list_notes(
-    q: Optional[str] = Query(None, description="Search query applied to title and content."),
+    query: Optional[str] = Query(None, description="Search query applied to title and content."),
+    tag: Optional[str] = Query(None, description="Filter notes by a single tag name."),
     tags: Optional[List[str]] = Query(
         None, description="Filter notes by tag names (repeat query param: ?tags=work&tags=todo)."
     ),
@@ -176,24 +181,31 @@ def list_notes(
     base_stmt = select(Note).options(selectinload(Note.tags))
 
     filters = []
-    if q:
-        like = f"%{q.strip()}%"
+
+    # Search filter (compat: `query` is expected by smoke checks; keep behavior same as previous `q`)
+    if query and query.strip():
+        like = f"%{query.strip()}%"
         filters.append(or_(Note.title.ilike(like), Note.content.ilike(like)))  # type: ignore[name-defined]
 
+    # Tag filters (compat: accept both `tag` and `tags`)
+    requested_tags: List[str] = []
+    if tag and tag.strip():
+        requested_tags.append(tag.strip())
     if tags:
-        normalized = [t.strip() for t in tags if t.strip()]
-        if normalized:
-            lower_names = [t.lower() for t in normalized]
-            # For "must include all tags", we use a group-by/having count distinct.
-            tag_subq = (
-                select(Note.id)
-                .join(Note.tags)
-                .where(func.lower(Tag.name).in_(lower_names))
-                .group_by(Note.id)
-                .having(func.count(func.distinct(func.lower(Tag.name))) == len(set(lower_names)))
-                .subquery()
-            )
-            filters.append(Note.id.in_(select(tag_subq.c.id)))  # type: ignore[attr-defined]
+        requested_tags.extend([t.strip() for t in tags if t and t.strip()])
+
+    if requested_tags:
+        lower_names = [t.lower() for t in requested_tags]
+        # For "must include all tags", we use a group-by/having count distinct.
+        tag_subq = (
+            select(Note.id)
+            .join(Note.tags)
+            .where(func.lower(Tag.name).in_(lower_names))
+            .group_by(Note.id)
+            .having(func.count(func.distinct(func.lower(Tag.name))) == len(set(lower_names)))
+            .subquery()
+        )
+        filters.append(Note.id.in_(select(tag_subq.c.id)))  # type: ignore[attr-defined]
 
     if filters:
         base_stmt = base_stmt.where(and_(*filters))
